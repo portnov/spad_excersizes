@@ -1,0 +1,136 @@
+)abbrev package PALPOL PalindromicalPolynomes
+PalindromicalPolynomes(V,R) : Exports == Implementation where
+  V : Symbol
+  -- R : Join(Comparable,IntegralDomain)
+  R : Join(Comparable, IntegralDomain, PolynomialFactorizationExplicit, RetractableTo Integer, LinearlyExplicitOver Integer, CharacteristicZero)
+
+  FailRecord ==> Record(failingIndex : Integer, relation : R, lambda : R, needed : R)
+  OddSolution ==> Record(oneRoot : R, rest : UnivariatePolynomial(V,R))
+  EvenSolution ==> Record(simplified : Expression R, newVariable : Symbol, coef : Expression R)
+  
+  Exports == with
+    reciprocalPolynomial : UnivariatePolynomial(V,R) -> UnivariatePolynomial(V,R)
+    reciprocalCoefficient : UnivariatePolynomial(V,R) -> Union(R, FailRecord, "empty", "cantDivide")
+    isPalindrome : UnivariatePolynomial(V,R) -> Boolean
+    solveReciprocal : UnivariatePolynomial(V,R) -> List Equation Expression R
+    simplifyReciprocal : UnivariatePolynomial(V,R) -> Union(OddSolution, EvenSolution, "failed")
+    expandSimplifiedSolution : (Expression R, Expression R) -> List Equation Expression R
+
+  Implementation == add
+    
+    reciprocalPolynomial p ==
+      zero? p => 0
+      d : NonNegativeInteger := degree p
+      md : NonNegativeInteger := d + minimumDegree p
+      monomials : List UnivariatePolynomial(V,R) := [monomial(coefficient(p,i), (md-i) :: NonNegativeInteger) for i in 0..d] 
+      reduce(_+, monomials)
+
+    reciprocalCoefficient p ==
+      zero? p => "empty"
+      d : Integer := degree p
+      d < 2 => "empty"
+      halfD : Integer := divide(d, 2).quotient
+      halfDn : NonNegativeInteger := halfD pretend NonNegativeInteger
+      halfDplusOne : NonNegativeInteger := (halfD + 1) pretend NonNegativeInteger
+      halfDminusOne : NonNegativeInteger := (halfD - 1) pretend NonNegativeInteger
+      if even? d then
+        lambda2 : Union(R, "failed") := coefficient(p, halfDminusOne) exquo coefficient(p, halfDplusOne)
+        if lambda2 case R then
+          for k in 0..halfDn repeat
+            dk := (d-k) pretend NonNegativeInteger
+            relation := coefficient(p,k) exquo coefficient(p, dk)
+            exponent : PositiveInteger := divide(d - 2*k, 2).quotient pretend PositiveInteger
+            if relation case R then
+              needed := (lambda2 pretend R) ^ exponent
+              if relation ~= needed then return [k, relation, lambda2, needed]
+            else
+              -- error "Cant find relation"
+              return "cantDivide"
+          lambda2
+        else
+          -- error ["Cant find Lambda2", coefficient(p, halfDminusOne), coefficient(p, halfDplusOne)]
+          "cantDivide"
+      else
+        lambda := coefficient(p, halfDn) exquo coefficient(p, halfDplusOne)
+        if lambda case R then
+          for k in 0..halfDn repeat
+            dk := (d-k) pretend NonNegativeInteger
+            relation := coefficient(p,k) exquo coefficient(p, dk)
+            exponent : PositiveInteger := (d - 2*k) pretend PositiveInteger
+            if relation case R then
+              needed := (lambda pretend R) ^ exponent
+              if relation ~= needed then return [k, relation, lambda, needed]
+            else
+              return "cantDivide"
+          lambda
+        else
+          "cantDivide"
+
+    isPalindrome p ==
+      coef := reciprocalCoefficient p
+      coef case R => coef = 1
+      false
+
+    simplifyReciprocal p == 
+      d : NonNegativeInteger := degree p
+      d < 2 => "failed"
+      coef := reciprocalCoefficient p
+      if coef case R then
+        if odd? d then
+          rest := p exquo (monomial(1,1) + monomial(coef,0))
+          if rest case UnivariatePolynomial(V,R) then
+            [-coef, rest pretend UnivariatePolynomial(V,R)]
+          else
+            "failed"
+        else
+          k := divide(d,2).quotient
+          tsym := new()$Symbol
+          t := monomial(1, kernel tsym, 1)$SparseMultivariatePolynomial(R, Kernel Expression R) :: Expression R
+          t2 := monomial(1, kernel tsym, 2)$SparseMultivariatePolynomial(R, Kernel Expression R) :: Expression R
+
+          n2 := (1+1) :: Expression R
+          n4 := (n2+n2)
+          coef_e := (coef pretend R) :: Expression R
+
+          sub : Expression R := (sqrt(t2 - n4*coef_e) + t) / n2
+          ms : List Expression R := [coefficient(p,i)*sub^(i-k) for i in 0..d]
+          simplified : Expression R := reduce(_+, ms)
+          [simplified, tsym, coef_e]
+
+      else
+        "failed"
+
+    expandSimplifiedSolution (coef, t) ==
+      n2 : Expression R := (1+1)
+      n4 : Expression R := (n2+n2)
+      t2 : Expression R := t^n2 - n4*coef
+      t3 : Expression R := sqrt(t2)
+      x1 : Expression R := (t + t3)/n2
+      x2 : Expression R := (t - t3)/n2
+      lhs1 := monomial(1, kernel V, 1)$SparseMultivariatePolynomial(R, Kernel Expression R) :: Expression R
+      [lhs1 = x1, lhs1 = x2]
+
+    solveReciprocal p ==
+      solution := simplifyReciprocal p
+      if solution case EvenSolution then
+        s := (solution pretend EvenSolution)
+        -- s1 : SparseUnivariatePolynomial R := univariate(numer s.simplified)$SparseMultivariatePolynomial(R, Kernel Expression R)
+        -- s2 : UnivariatePolynomial(s.newVariable,R) := unmakeSUP s1
+        -- s2 : Polynomial R := multivariate(s1, s.newVariable)$Polynomial(R) :: Polynomial R
+        -- s3 : Fraction Polynomial R := s2 :: Fraction Polynomial R
+        -- t_solutions : List Equation Expression R := radicalSolve(s3 :: Fraction Polynomial R, s.newVariable :: Symbol) :: List Equation Expression R
+        t_solutions := solve(s.simplified, s.newVariable)$TransSolvePackage(R)
+        concat [expandSimplifiedSolution(s.coef, rhs sol) for sol in t_solutions]
+      else
+        if solution case OddSolution then
+          s := (solution pretend OddSolution)
+          lhs1 := monomial(1, kernel V, 1)$SparseMultivariatePolynomial(R, Kernel Expression R) :: Expression R
+          rhs1 := s.oneRoot :: R :: Expression R
+          oneSolution := lhs1 = rhs1
+          otherSolutions := solveReciprocal s.rest
+          concat(oneSolution, otherSolutions)
+        else
+          []
+
+
+        

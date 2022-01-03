@@ -1,0 +1,33 @@
+)abbrev domain ECPLX ExpComplex
+ExpComplex(R) : Exports == Implementation where
+   R : Join(TrigonometricFunctionCategory,  RealNumberSystem, TranscendentalFunctionCategory)
+   Exports == ComplexCategory R with
+      toComplex : % -> Complex R
+      fromComplex : Complex R -> %
+      
+   Implementation == add
+      Rep := Record(absValue : R, arg : R)
+      
+      --abs : % -> %
+      --abs x = [x.absValue, 0]
+
+      toComplex x == complex(x.absValue * cos(x.arg), x.absValue * sin(x.arg))
+      
+      fromComplex z == [real abs z, argument z]
+      
+      0                == [0, 0]
+      1                == [1, 0]
+      imaginary        == fromComplex(imaginary())
+      zero? x          == zero?(x.absValue)
+      one? x           == ((x.absValue) = 1) and zero?(x.arg)
+      coerce(r : R) : %    == [r, 0]
+      --coerce(x : Complex R) : % = fromComplex x
+      --coerce(x : %) : Complex R = toComplex x
+      complex(r, i)   == fromComplex(complex(r,i) :: Complex R)
+      real x           == real (toComplex x)
+      imag x           == imag (toComplex x)
+      
+      x + y == fromComplex (toComplex x + toComplex y)
+      x - y == fromComplex (toComplex x - toComplex y)
+      x : % * y : % ==
+          [x.absValue * y.absValue, x.arg + y.arg]
