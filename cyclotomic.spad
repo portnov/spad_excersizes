@@ -1,0 +1,110 @@
+)abbrev package CYCPOLY CyclotomicPolynomes
+CyclotomicPolynomes(V,R) : Exports == Implementation where
+  V : Symbol
+  R : Join(Comparable, IntegralDomain, PolynomialFactorizationExplicit, RetractableTo Integer, LinearlyExplicitOver Integer, CharacteristicZero)
+
+  Solution R ==> Record(equations : List Equation Polynomial R, coeffs : List Symbol, solutions : List Equation Fraction Polynomial R)
+
+  Exports == with
+    cyclotomicPoly : (PositiveInteger, R) -> UnivariatePolynomial(V, R)
+    quasiCyclotomic : (PositiveInteger, Polynomial R, Polynomial R) -> UnivariatePolynomial(V, Polynomial R)
+    quasiCyclotomic : (List PositiveInteger, List Polynomial R) -> UnivariatePolynomial(V, Polynomial R)
+    makeEquations : (List PositiveInteger, List Polynomial R, UnivariatePolynomial(V, Polynomial R)) -> List Equation Polynomial R
+    makeEquations : (List PositiveInteger, UnivariatePolynomial(V, Polynomial R)) -> Solution R
+    solveEquations : Solution R -> Solution R
+
+  Implementation == add
+    
+    cyclotomicPoly(n, c) ==
+      x := monomial(1, 1)
+      cp := monomial(c, 0)
+      x^n + cp
+
+    quasiCyclotomic(n, a, b) ==
+      x := monomial(1, 1)
+      ap := monomial(a, 0)
+      bp := monomial(b, 0)
+      (x + ap)^n + bp
+
+    quasiCyclotomicImpl : (List PositiveInteger, List Polynomial R) -> UnivariatePolynomial(V, Polynomial R)
+    quasiCyclotomicImpl(degrees, coeffs) ==
+      # degrees = 1 => quasiCyclotomic(first degrees, first coeffs, second coeffs)
+      q := quasiCyclotomic(first degrees, 0, first coeffs)
+      x := monomial(1, 1)
+      eval(q, x = quasiCyclotomic(rest degrees, rest coeffs))
+    
+    quasiCyclotomic(degrees, coeffs) == 
+      # degrees + 1 ~= # coeffs => error "Incorrect arguments"
+      quasiCyclotomicImpl(reverse degrees, reverse coeffs)
+
+    makeEquations(degrees, coeffs, target) ==
+      q := quasiCyclotomic(degrees, coeffs)
+      cyclotomicDegree := reduce(_*, degrees)
+      targetDegree := degree target
+      d := max(cyclotomicDegree, targetDegree)
+      [coefficient(q, i) = coefficient(target, i) for i in 0..d]
+
+    makeA : () -> Record(poly : Polynomial R, symbol : Symbol)
+    makeA ==
+      a := new()$Symbol
+      p := monomial(1, a, 1)$Polynomial(R)
+      [p, a]
+
+    makeEquations(degrees, target) ==
+      coeffRecords := [makeA() for i in 1 .. #degrees + 1]
+      coeffs := [r.poly for r in coeffRecords]
+      eqs := makeEquations(degrees, coeffs, target)
+      symbols := [r.symbol for r in coeffRecords]
+      [eqs, symbols, []]
+
+    eqDegree : (Equation Polynomial R, Symbol) -> NonNegativeInteger
+    eqDegree(eq, x) == degree(lhs eq - rhs eq, x)
+
+    eqTotalDegree : Equation Polynomial R -> NonNegativeInteger
+    eqTotalDegree eq == totalDegree(lhs eq - rhs eq)
+
+    eqToFraction : Equation Polynomial R -> Equation Fraction Polynomial R
+    eqToFraction eq == (lhs eq :: Fraction Polynomial R) = (rhs eq :: Fraction Polynomial R)
+
+    eqFromFraction : Equation Fraction Polynomial R -> Equation Polynomial R
+    eqFromFraction eq ==
+      not ground? denom rhs eq => error "Should be impossible: RHS of some equation is not polynomial"
+      denom rhs eq * numer lhs eq = numer rhs eq * denom lhs eq
+
+    isPolynomial? : Equation Fraction Polynomial R -> Boolean
+    isPolynomial? eq ==
+      (ground? denom lhs eq) and (ground? denom rhs eq)
+
+    solveEquationsStep : Solution R -> Solution R
+    solveEquationsStep(rec) ==
+      for eq in rec.equations repeat
+        if eqTotalDegree eq = 0 then
+          if not (eq :: Boolean) then
+            error ["No match in zero-order equation: ", eq]
+
+      equations : List Equation Polynomial R := select(eq +-> eqTotalDegree eq > 0, rec.equations)
+      empty? equations => [equations, rec.coeffs, rec.solutions]
+
+      a : Symbol := first rec.coeffs
+      firstOrder := select(eq +-> eqDegree(eq, a) = 1, equations)
+      eqs1 := [eqToFraction eq for eq in firstOrder]
+
+      firstSolutions := solve(eqs1, [a])$SystemSolvePackage(R)
+      # firstSolutions ~= 1 => error ["Cannot correctly solve an equation of first order", eqs1]
+
+      aValue : Equation Fraction Polynomial R := first first firstSolutions
+      eqsF : List Equation Fraction Polynomial R := [eqToFraction eq for eq in equations]
+      simplifiedEqs := [eval(lhs eq :: Fraction Polynomial R, aValue)$RationalFunction(R) :: Fraction Polynomial R = eval(rhs eq, aValue) for eq in eqsF]
+      simplifiedPolyEqs : List Equation Polynomial R := [eqFromFraction eq for eq in simplifiedEqs]
+
+      coeffs : List Symbol := rest rec.coeffs
+      solutions : List Equation Fraction Polynomial R := cons(aValue, rec.solutions)
+
+      [simplifiedPolyEqs, coeffs, solutions]
+
+    solveEquations(rec) ==
+      solution := solveEquationsStep rec
+      empty? solution.equations => solution
+      solveEquations solution
+      
+
