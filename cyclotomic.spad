@@ -1,9 +1,10 @@
 )abbrev package CYCPOLY CyclotomicPolynomes
 CyclotomicPolynomes(V,R) : Exports == Implementation where
   V : Symbol
-  R : Join(Comparable, IntegralDomain, PolynomialFactorizationExplicit, RetractableTo Integer, LinearlyExplicitOver Integer, CharacteristicZero)
+  R : Join(Comparable, IntegralDomain, PolynomialFactorizationExplicit, RetractableTo Integer, LinearlyExplicitOver Integer, CharacteristicZero, CoercibleFrom Integer)
 
-  Solution R ==> Record(equations : List Equation Polynomial R, coeffs : List Symbol, solutions : List Equation Fraction Polynomial R)
+  Solution R == Record(equations : List Equation Polynomial R, coeffs : List Symbol, solutions : List Equation Fraction Polynomial R)
+  Cyclotomic R ==> List Fraction Polynomial R
 
   Exports == with
     cyclotomicPoly : (PositiveInteger, R) -> UnivariatePolynomial(V, R)
@@ -11,7 +12,8 @@ CyclotomicPolynomes(V,R) : Exports == Implementation where
     quasiCyclotomic : (List PositiveInteger, List Polynomial R) -> UnivariatePolynomial(V, Polynomial R)
     makeEquations : (List PositiveInteger, List Polynomial R, UnivariatePolynomial(V, Polynomial R)) -> List Equation Polynomial R
     makeEquations : (List PositiveInteger, UnivariatePolynomial(V, Polynomial R)) -> Solution R
-    solveEquations : Solution R -> Solution R
+    solveEquations : Solution R -> Union(Solution R, Equation Polynomial R)
+--    solveCyclotomic : (List PositiveInteger, Cyclotomic R) -> List Expression R
 
   Implementation == add
     
@@ -75,12 +77,12 @@ CyclotomicPolynomes(V,R) : Exports == Implementation where
     isPolynomial? eq ==
       (ground? denom lhs eq) and (ground? denom rhs eq)
 
-    solveEquationsStep : Solution R -> Solution R
+    solveEquationsStep : Solution R -> Union(Solution R, Equation Polynomial R)
     solveEquationsStep(rec) ==
       for eq in rec.equations repeat
         if eqTotalDegree eq = 0 then
           if not (eq :: Boolean) then
-            error ["No match in zero-order equation: ", eq]
+            return eq
 
       equations : List Equation Polynomial R := select(eq +-> eqTotalDegree eq > 0, rec.equations)
       empty? equations => [equations, rec.coeffs, rec.solutions]
@@ -104,7 +106,49 @@ CyclotomicPolynomes(V,R) : Exports == Implementation where
 
     solveEquations(rec) ==
       solution := solveEquationsStep rec
-      empty? solution.equations => solution
-      solveEquations solution
-      
+      if solution case (Solution R) then
+        sol := solution @ Solution R
+        empty? sol.equations => sol
+        solveEquations sol
+      else
+        solution @ Equation Polynomial R
 
+    mkCyclotomic : Solution R -> Cyclotomic R
+    mkCyclotomic(sol) ==
+      [rhs eq for eq in sol.solutions :: List Equation Fraction Polynomial R]
+
+    cyclotomicRoot : (Integer, Integer) -> Expression R
+    cyclotomicRoot (j, n) ==
+            j = 0 => 1
+            arg : Expression R := 2*j*pi()/(n::Expression R)
+            cos arg + (-1)^(1/2) * sin arg
+
+    cyclotomicRoots : (NonNegativeInteger) -> List Expression R
+    cyclotomicRoots (n) == [cyclotomicRoot(i, n) for i in 0..(n - 1)]
+
+    complexRoots : (NonNegativeInteger, Fraction Polynomial R) -> List Expression R
+    complexRoots(n, x) ==
+      xe := x :: Expression R
+      rts := cyclotomicRoots n
+      [xe^(1/n)*rt for rt in rts]
+
+--     solveCyclotomic (degrees, cp) ==
+--       if # cp = 2 then
+--         -- (x + a)^n + b = 0
+--         a := second cp :: Expression R
+--         b := first cp
+--         n := first degrees
+--         sqrtB := complexRoots(n, -b)
+--         [rt - a for rt in sqrtB]
+--       else
+--         n := first degrees
+--         c := first cp
+--         sqrtC := complexRoots(n, -c)
+--         res := empty() :: List Expression R
+--         for rtC in sqrtC repeat
+--           b1 := first (rest cp) - rtC
+--           cp1 := cons(b1, rest rest cp)
+--           prevRoots := solveCyclotomic(rest degrees, cp1)
+--           res := concat(res, prevRoots)
+--         res
+-- 
