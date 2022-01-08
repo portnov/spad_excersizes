@@ -133,7 +133,9 @@ FormalPowerSeries(V, R) : Exports == Implementation where
     divideByX : % -> %
     coefficients : % -> Stream (Expression R)
     eval : (%, Expression R) -> Stream (Expression R)
-    substX : (%, Expression R) -> %
+    substituteXMultipliedBy : (%, Expression R) -> %
+
+    nthPolynomial : (%, PositiveInteger, Symbol) -> Polynomial (Expression R)
 
     sinX : () -> %
     cosX : () -> %
@@ -175,16 +177,20 @@ FormalPowerSeries(V, R) : Exports == Implementation where
 
     coefficients ex == constructCoefficients(ex, 0)
 
-    constructValues : (%, NonNegativeInteger, Expression R, Expression R) -> Stream Expression R
-    constructValues (ex, i, x, prev) == delay$(Stream Expression R)
+    constructPartialSums : (%, NonNegativeInteger, Expression R, Expression R) -> Stream Expression R
+    constructPartialSums (ex, i, x, prev) == delay$(Stream Expression R)
       ai := evalN(ex, i)
       nextValue := ai * x ^ (i :: Expression R)
       value := prev + nextValue
-      cons(value, constructValues(ex, i+1, x, value))
+      cons(value, constructPartialSums(ex, i+1, x, value))
 
-    eval (ex, x) == constructValues(ex, 0, x, 0)
+    eval (ex, x) == constructPartialSums(ex, 0, x, 0)
 
-    substX (ex, k) ==
+    nthPolynomial(ex, n, x) ==
+      monoms : List Polynomial Expression R := [monomial(evalN(ex, i), construct [[x, i]]) for i in 0..n]
+      reduce(_+, monoms)
+
+    substituteXMultipliedBy (ex, k) ==
       not freeOf?(k, V) => error "Multiplier must not depend on N"
       v : Expression R := V :: Expression R
       res : Expression R := (k ^ v) * ex.expr
