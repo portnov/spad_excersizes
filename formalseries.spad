@@ -1,0 +1,228 @@
+)abbrev domain IVERSON IversonBracket
+IversonBracket(V, R) : Exports == Implementation where
+  V : Symbol
+  R : Join(CommutativeRing, Comparable, EuclideanDomain, CoercibleFrom Integer, OrderedSet, CoercibleTo OutputForm)
+
+  Boundary R ==> Union(R, "any")
+  Bracket R ==> Record(lower : Boundary R, upper : Boundary R, divisors : List R)
+
+  Exports == Join(CoercibleTo OutputForm, MeetSemilattice) with
+    
+    unrestricted : () -> %
+    startWith : R -> %
+    endWith : R -> %
+    between : (R, R) -> %
+    dividesBy : R -> %
+
+    eval : (%, R) -> Boolean
+
+  Implementation == add
+    
+    Rep := List Bracket R
+
+    unrestricted == [["any", "any", []]]
+    startWith x == [[x, "any", []]]
+    endWith x == [["any", x, []]]
+    between (x,y) == [[x, y, []]]
+
+    dividesBy x == [["any", "any", [x]]]
+
+    minBoundary : (Boundary R, Boundary R) -> Union(Boundary R, "failed")
+    minBoundary (x, y) ==
+      (x case "any") and (y case "any") => "any" :: Boundary R
+      x case "any" => y :: Boundary R
+      y case "any" => x :: Boundary R
+      (x case R) and (y case R) =>
+        xr : R := x :: R
+        yr : R := y :: R
+        m : R := min(xr, yr) :: R
+        m :: Boundary R
+      "failed"
+
+    maxBoundary : (Boundary R, Boundary R) -> Union(Boundary R, "failed")
+    maxBoundary (x, y) ==
+      (x case "any") and (y case "any") => "any" :: Boundary R
+      x case "any" => y :: Boundary R
+      y case "any" => x :: Boundary R
+      (x case R) and (y case R) =>
+        xr : R := x :: R
+        yr : R := y :: R
+        m : R := max(xr, yr) :: R
+        m :: Boundary R
+      "failed"
+
+    joinDivisors : (List R, List R) -> List R
+    joinDivisors (lst1, lst2) == removeDuplicates concat(lst1, lst2)
+
+    join : (Bracket R, Bracket R) -> Union(Bracket R, "failed")
+    join (r1, r2) ==
+      lower1 := maxBoundary(r1.lower, r2.lower)
+      lower1 case "failed" => "failed"
+      upper1 := minBoundary(r1.upper, r2.upper)
+      upper1 case "failed" => "failed"
+
+      lower := lower1 :: Boundary R
+      upper := upper1 :: Boundary R
+
+      divisors := joinDivisors(r1.divisors, r2.divisors)
+
+      [lower, upper, divisors]
+
+    _/_\ (rs1, rs2) ==
+      res := rs1
+      for i in 1 .. #rs1 repeat
+        for j in 1 .. #rs2 repeat
+          r1 := res(i)
+          r2 := rs2(j)
+          rr := join(r1, r2)
+          if rr case "failed" then
+            res := append(res, [r2])
+          else
+            res(j) := rr :: Bracket R
+      res
+
+    coerceBoundary : Boundary R -> OutputForm
+    coerceBoundary b ==
+      b case "any" => message "any"
+      b case R => b :: OutputForm
+
+    coerceBracket : Bracket R -> OutputForm
+    coerceBracket b ==
+      n : OutputForm := V :: Expression R :: OutputForm
+      res := [] :: List OutputForm
+      if not (b.lower case "any") then
+        out : OutputForm := n >= coerceBoundary(b.lower)
+        res := append(res, [out])
+      if not (b.upper case "any") then
+        res := append(res, [n <= coerceBoundary(b.upper)])
+      if not empty? b.divisors then
+        divisors := [infix(outputForm "divisible by", n, d :: OutputForm) for d in b.divisors]
+        res := append(res, divisors)
+      bracket res
+
+    coerce (rs : %) : OutputForm ==
+      blankSeparate [coerceBracket r for r in rs]
+
+    divides : (R, R) -> Boolean
+    divides (x, d) == (x rem d) = 0
+
+    evalBracket : (Bracket R, R) -> Boolean
+    evalBracket (b, x) ==
+      (b.lower case R) and x < (b.lower :: R) => false
+      (b.upper case R) and x > (b.upper :: R) => false
+      ds : List R := b.divisors
+      any?(d +-> not divides(x, d :: R), ds) => false
+      true
+
+    eval (rs, x) ==
+      every?(b +-> evalBracket(b, x), rs)
+
+)abbrev domain FPSERIES FormalPowerSeries
+FormalPowerSeries(V, R) : Exports == Implementation where
+  V : Symbol
+  R : Join(CommutativeRing, Comparable, IntegralDomain, CoercibleFrom Integer)
+
+  Exports == CoercibleTo OutputForm with
+
+    formalSeries : (Expression R) -> %
+    _+ : (%, %) -> %
+    _- : (%, %) -> %
+    _* : (Expression R, %) -> %
+    shift : (Integer,%) -> %
+    multiplyByX : % -> %
+    divideByX : % -> %
+    coefficients : % -> Stream (Expression R)
+    eval : (%, Expression R) -> Stream (Expression R)
+    substX : (%, Expression R) -> %
+
+    sinX : () -> %
+    cosX : () -> %
+    sinhX : () -> %
+    coshX : () -> %
+    expX : () -> %
+
+  Implementation == add
+    Rep := Record(expr : Expression R)
+
+    formalSeries ex == [ex]
+
+    x + y == [x.expr + y.expr]
+    x - y == [x.expr - y.expr]
+
+    (k : Expression R) * (x : %) ==
+      not freeOf?(k, V) => error "Multiplier is not constant"
+      [k * x.expr]
+
+    evalN : (%, Integer) -> Expression R
+    evalN(ex, i) ==
+      v : Expression R := V :: Expression R
+      res : Expression R := eval(ex.expr, v = (i :: R :: Expression R)) :: Expression R
+      res
+
+    shift (k,ex) ==
+      v : Expression R := V :: Expression R
+      ke : Expression R := k :: R :: Expression R
+      res : Expression R := eval(ex.expr, v = v + ke)
+      [res]
+
+    multiplyByX ex == shift(-1, ex)
+    divideByX ex == shift(1, ex)
+
+    constructCoefficients : (%, NonNegativeInteger) -> Stream Expression R
+    constructCoefficients (ex, i) == delay$(Stream Expression R)
+      ai := evalN(ex, i)
+      cons(ai, constructCoefficients(ex, i+1))
+
+    coefficients ex == constructCoefficients(ex, 0)
+
+    constructValues : (%, NonNegativeInteger, Expression R, Expression R) -> Stream Expression R
+    constructValues (ex, i, x, prev) == delay$(Stream Expression R)
+      ai := evalN(ex, i)
+      nextValue := ai * x ^ (i :: Expression R)
+      value := prev + nextValue
+      cons(value, constructValues(ex, i+1, x, value))
+
+    eval (ex, x) == constructValues(ex, 0, x, 0)
+
+    substX (ex, k) ==
+      not freeOf?(k, V) => error "Multiplier must not depend on N"
+      v : Expression R := V :: Expression R
+      res : Expression R := (k ^ v) * ex.expr
+      [res]
+
+    sinX ==
+      n := V :: Expression R
+      two : Expression R := 2 :: Expression R
+      m : Expression R := (-1)^((n-1) quo two)*(1 - (-1)^n)/two
+      ex := m/factorial(n)
+      [ex]
+
+    cosX ==
+      n := V :: Expression R
+      two : Expression R := 2 :: Expression R
+      m : Expression R := (-1)^(n quo two)*(1 + (-1)^n)/two
+      ex := m/factorial(n)
+      [ex]
+
+    sinhX ==
+      n := V :: Expression R
+      ex := (1 - (-1)^n)/(2*factorial(n))
+      [ex]
+
+    coshX ==
+      n := V :: Expression R
+      ex := (1 + (-1)^n)/(2*factorial(n))
+      [ex]
+
+    expX ==
+      n := V :: Expression R
+      ex := 1/factorial(n)
+      [ex]
+
+    coerce ex ==
+      v := V :: Expression R
+      xs := 'x :: Symbol :: Expression R
+      ex1 : Expression R := ex.expr * (xs ^ v)
+      sum (ex1 :: OutputForm)
+
+
