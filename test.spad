@@ -1,0 +1,14 @@
+)abbrev package TEST TestPackage
+TestPackage() : Exports == Implementation where
+
+  Exports == with
+    
+    myFunc : Union(int : Integer, str : String) -> Integer
+
+  Implementation == add
+
+    myFunc x ==
+      x case int => x.int + 1
+      error "not implemented yet"
+     
+    

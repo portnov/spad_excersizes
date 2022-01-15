@@ -1,0 +1,64 @@
+)abbrev package EXHELPER ExpressionHelper
+ExpressionHelper(R) : Exports == Implementation where
+
+  R : Join(Comparable, PolynomialFactorizationExplicit, RetractableTo Integer, LinearlyExplicitOver Integer, CharacteristicZero)
+
+  PowerRecord ==> Record(val : Expression(R), exponent : Integer) 
+  
+  Exports == with
+
+    dividePower : (Expression R, Expression R) -> Union(Expression R, "failed")
+    factorOut : (Expression R, Expression R) -> Expression R
+
+  Implementation == add
+
+    dividePower(ex1, ex2) ==
+        r1 := isPower ex1
+        r2 := isPower ex2
+        r1 case "failed" or r2 case "failed" => "failed"
+        p1 : PowerRecord := r1 :: PowerRecord
+        p2 : PowerRecord := r2 :: PowerRecord
+        (p1.val ~= p2.val) => "failed"
+        p1.val ^ (p1.exponent - p2.exponent)
+
+    factorOutSum : (Expression R, Expression R) -> Union(Expression R, "failed")
+    factorOutSum(k, ex) ==
+      (p1 := isPlus ex) case "failed" => "failed"
+      summands : List Expression R := p1 :: List Expression R
+      goodSummands := [] :: List Expression R
+      badSummands := [] :: List Expression R
+      success := true
+      for a in summands repeat
+        p2 := isTimes a
+        if p2 case "failed" then
+          div := dividePower(a, k)
+          if div case "failed" then
+            badSummands := cons(a, badSummands)
+          else
+            goodSummands := cons(div @ Expression R, goodSummands)
+        else
+          ms : List Expression R := p2 :: List Expression R
+          if member?(k, ms) then
+            a2 := reduce(_*, remove(k, ms))
+            goodSummands := cons(a2, goodSummands)
+          else
+            badSummands := cons(a, badSummands)
+
+      box(reduce(_+, goodSummands)) * k + reduce(_+, badSummands)
+
+    factorOutProd : (Expression R, Expression R) -> Union(Expression R, "failed")
+    factorOutProd(k, ex) ==
+      (p1 := isTimes ex) case "failed" => "failed"
+      multipliers : List Expression R := p1 :: List Expression R
+      newMultipliers := [factorOut(k, a) for a in multipliers]
+      reduce(_*, newMultipliers)
+
+    factorOut(k, ex) ==
+      ex1 := factorOutSum(k, ex)
+      if ex1 case "failed" then
+        ex2 := factorOutProd(k, ex)
+        ex2 case "failed" => ex
+        ex2 :: Expression R
+      else
+        ex1 :: Expression R
+    

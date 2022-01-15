@@ -1,0 +1,43 @@
+)abbrev package INTHELP IntegralHelper
+IntegralHelper(R) : Exports == Implementation where
+
+  R : Join(Comparable, PolynomialFactorizationExplicit, RetractableTo Integer, LinearlyExplicitOver Integer, CharacteristicZero)
+
+  IndefiniteIntegral R ==> Record(expr : Expression R, backwardSubstitution : Equation Expression R)
+  DefiniteIntegral R ==> Record(expr : Expression R, interval : SegmentBinding Expression R, backwardSubstitution : Equation Expression R)
+
+  Exports == with
+
+    changeVar : (Expression R, Equation Expression R, Symbol, Symbol) -> IndefiniteIntegral R
+    changeVar : (Expression R, SegmentBinding Expression R, Equation Expression R, Symbol) -> DefiniteIntegral R
+    feynmanIntegrate : (Expression R, SegmentBinding OrderedCompletion Expression R, SegmentBinding Expression R) -> Union(OrderedCompletion Expression R, "failed", "potentialPole")
+
+  Implementation == add
+
+    changeVar(expr : Expression R, eqn : Equation Expression R, oldvar : Symbol, newvar : Symbol) : IndefiniteIntegral R == 
+        sol := solve(eqn, oldvar)$TransSolvePackage(R)
+        value := rhs(sol(1))
+        oldvar_e : Expression R := oldvar :: Expression R
+        newExpr := eval(expr, oldvar_e=value)
+        [newExpr * D(value, newvar), solve(eqn, newvar)(1)]
+        
+    changeVar(expr : Expression R, bind : SegmentBinding Expression R, eqn : Equation Expression R, newvar : Symbol) : DefiniteIntegral R == 
+        oldvar := variable(bind)$SegmentBinding(Expression(R))
+        sg := segment bind
+        r := changeVar(expr, eqn, oldvar, newvar)
+        substitution := rhs(r.backwardSubstitution)
+        oldvar_e : Expression R := oldvar :: Expression R
+        newA := eval(substitution, oldvar_e = low sg)
+        newB := eval(substitution, oldvar_e = high sg)
+        newSg := equation(newvar, segment(newA, newB))
+        [r.expr, newSg, r.backwardSubstitution]
+
+    feynmanIntegrate(expr, bind, addbind) ==
+      addvar := variable(addbind)$SegmentBinding(Expression(R))
+      diff : Expression R := D(expr, addvar)
+      addint := integrate(diff, bind)$ElementaryFunctionDefiniteIntegration(R, Expression(R))
+      addint case fail => "failed"
+      addint case pole => "potentialPole"
+      int := addint pretend OrderedCompletion Expression R
+      int
+        
