@@ -3,41 +3,64 @@ IntegralHelper(R) : Exports == Implementation where
 
   R : Join(Comparable, PolynomialFactorizationExplicit, RetractableTo Integer, LinearlyExplicitOver Integer, CharacteristicZero)
 
-  IndefiniteIntegral R ==> Record(expr : Expression R, backwardSubstitution : Equation Expression R)
-  DefiniteIntegral R ==> Record(expr : Expression R, interval : SegmentBinding Expression R, backwardSubstitution : Equation Expression R)
+  E ==> Expression R
+  IndefiniteIntegral ==> Record(expr : E, backwardSubstitution : Equation E)
+  DefiniteIntegral ==> Record(expr : E, interval : SegmentBinding E, backwardSubstitution : Equation E)
+  ByPartsResult ==> Record(uv : E, integralVDu : E)
 
   Exports == with
 
-    changeVar : (Expression R, Equation Expression R, Symbol, Symbol) -> IndefiniteIntegral R
-    changeVar : (Expression R, SegmentBinding Expression R, Equation Expression R, Symbol) -> DefiniteIntegral R
-    feynmanIntegrate : (Expression R, SegmentBinding OrderedCompletion Expression R, SegmentBinding Expression R) -> Union(OrderedCompletion Expression R, "failed", "potentialPole")
+    changeVar : (E, Equation E, Symbol, Symbol) -> IndefiniteIntegral
+    changeVar : (E, SegmentBinding E, Equation E, Symbol) -> DefiniteIntegral
+    integrateByPartsParted : (E, E, Symbol) -> Union(ByPartsResult, "failed")
+    integrateByParts : (E, E, Symbol) -> Union(E, "failed")
+    feynmanIntegrate : (E, SegmentBinding OrderedCompletion E, SegmentBinding E) -> Union(OrderedCompletion E, "failed", "potentialPole")
 
   Implementation == add
 
-    changeVar(expr : Expression R, eqn : Equation Expression R, oldvar : Symbol, newvar : Symbol) : IndefiniteIntegral R == 
+    changeVar(expr : E, eqn : Equation E, oldvar : Symbol, newvar : Symbol) : IndefiniteIntegral == 
         sol := solve(eqn, oldvar)$TransSolvePackage(R)
         value := rhs(sol(1))
-        oldvar_e : Expression R := oldvar :: Expression R
+        oldvar_e : E := oldvar :: E
         newExpr := eval(expr, oldvar_e=value)
         [newExpr * D(value, newvar), solve(eqn, newvar)(1)]
         
-    changeVar(expr : Expression R, bind : SegmentBinding Expression R, eqn : Equation Expression R, newvar : Symbol) : DefiniteIntegral R == 
+    changeVar(expr : E, bind : SegmentBinding E, eqn : Equation E, newvar : Symbol) : DefiniteIntegral == 
         oldvar := variable(bind)$SegmentBinding(Expression(R))
         sg := segment bind
         r := changeVar(expr, eqn, oldvar, newvar)
         substitution := rhs(r.backwardSubstitution)
-        oldvar_e : Expression R := oldvar :: Expression R
+        oldvar_e : E := oldvar :: E
         newA := eval(substitution, oldvar_e = low sg)
         newB := eval(substitution, oldvar_e = high sg)
         newSg := equation(newvar, segment(newA, newB))
         [r.expr, newSg, r.backwardSubstitution]
 
+    integrateByPartsParted (u, dv, x) ==
+      vr := integrate(dv, x) $ FunctionSpaceIntegration(R, E)
+      vr case List E => "failed"
+      v : E := vr :: E
+
+      du := D(u, x) :: E
+
+      vdur := integrate(v*du, x) $ FunctionSpaceIntegration(R, E)
+      vdur case List E => "failed"
+      vdu : E := vdur :: E
+      res : ByPartsResult := [u*v, vdu]
+      res
+
+    integrateByParts(u, dv, x) ==
+      r := integrateByPartsParted(u, dv, x)
+      r case "failed" => "failed"
+      result := r :: ByPartsResult
+      result.uv - result.integralVDu
+
     feynmanIntegrate(expr, bind, addbind) ==
       addvar := variable(addbind)$SegmentBinding(Expression(R))
-      diff : Expression R := D(expr, addvar)
+      diff : E := D(expr, addvar)
       addint := integrate(diff, bind)$ElementaryFunctionDefiniteIntegration(R, Expression(R))
       addint case fail => "failed"
       addint case pole => "potentialPole"
-      int := addint pretend OrderedCompletion Expression R
+      int := addint pretend OrderedCompletion E
       int
         

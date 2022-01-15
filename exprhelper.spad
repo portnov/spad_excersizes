@@ -1,16 +1,31 @@
 )abbrev package EXHELPER ExpressionHelper
 ExpressionHelper(R) : Exports == Implementation where
 
-  R : Join(Comparable, PolynomialFactorizationExplicit, RetractableTo Integer, LinearlyExplicitOver Integer, CharacteristicZero)
+  R : Join(Comparable, PolynomialFactorizationExplicit, RetractableTo Integer, LinearlyExplicitOver Integer, CharacteristicZero, CoercibleFrom Integer, Ring)
 
-  PowerRecord ==> Record(val : Expression(R), exponent : Integer) 
+  E ==> Expression R
+  PowerRecord ==> Record(val : E, exponent : Integer) 
   
   Exports == with
 
-    dividePower : (Expression R, Expression R) -> Union(Expression R, "failed")
-    factorOut : (Expression R, Expression R) -> Expression R
+    dividePower : (E, E) -> Union(E, "failed")
+    factorOut : (List E, E) -> E
+    factorOut : (E, E) -> E
+
+    assume : (E, Symbol) -> Symbol
+    assumed? : (E, Symbol) -> Boolean
+    known? : (E, Symbol) -> Boolean
+    positive? : E -> Boolean
+    facts : E -> Set Symbol
+
+    if R has PatternMatchable R and R has ConvertibleTo Pattern R then
+      collapseSqrtSqr : E -> E
+
+    trig2tan : E -> E
 
   Implementation == add
+
+    marks := empty() $ Table(E, Set Symbol)
 
     dividePower(ex1, ex2) ==
         r1 := isPower ex1
@@ -21,44 +36,112 @@ ExpressionHelper(R) : Exports == Implementation where
         (p1.val ~= p2.val) => "failed"
         p1.val ^ (p1.exponent - p2.exponent)
 
-    factorOutSum : (Expression R, Expression R) -> Union(Expression R, "failed")
-    factorOutSum(k, ex) ==
+    factorOutSum : (List E, E) -> Union(E, "failed")
+    factorOutSum(ks, ex) ==
       (p1 := isPlus ex) case "failed" => "failed"
-      summands : List Expression R := p1 :: List Expression R
-      goodSummands := [] :: List Expression R
-      badSummands := [] :: List Expression R
-      success := true
-      for a in summands repeat
-        p2 := isTimes a
+      summands : List E := p1 :: List E
+      goodSummands := [] :: List E
+      badSummands := [] :: List E
+      for summand in summands repeat
+        p2 := isTimes summand
         if p2 case "failed" then
-          div := dividePower(a, k)
-          if div case "failed" then
-            badSummands := cons(a, badSummands)
+          if # ks = 1 then
+            k := ks.1
+            div := dividePower(summand, k)
+            if div case "failed" then
+              badSummands := cons(summand, badSummands)
+            else
+              goodSummands := cons(div @ E, goodSummands)
           else
-            goodSummands := cons(div @ Expression R, goodSummands)
+            badSummands := cons(summand, badSummands)
         else
-          ms : List Expression R := p2 :: List Expression R
-          if member?(k, ms) then
-            a2 := reduce(_*, remove(k, ms))
+          multipliers : List E := p2 :: List E
+          if every?(k +-> member?(k, multipliers), ks) then
+            restMults := multipliers
+            for k in ks repeat
+              restMults := remove(k, restMults)
+            a2 := reduce(_*, restMults, 1)
             goodSummands := cons(a2, goodSummands)
           else
-            badSummands := cons(a, badSummands)
+            badSummands := cons(summand, badSummands)
 
-      box(reduce(_+, goodSummands)) * k + reduce(_+, badSummands)
+      ks1 := reduce(_*, ks)
+      paren(reduce(_+, goodSummands, 0)) * ks1 + reduce(_+, badSummands, 0)
 
-    factorOutProd : (Expression R, Expression R) -> Union(Expression R, "failed")
-    factorOutProd(k, ex) ==
+    factorOutProd : (List E, E) -> Union(E, "failed")
+    factorOutProd(ks, ex) ==
       (p1 := isTimes ex) case "failed" => "failed"
-      multipliers : List Expression R := p1 :: List Expression R
-      newMultipliers := [factorOut(k, a) for a in multipliers]
-      reduce(_*, newMultipliers)
+      multipliers : List E := p1 :: List E
+      newMultipliers := [factorOut(ks, a) for a in multipliers]
+      reduce(_*, newMultipliers, 1)
 
-    factorOut(k, ex) ==
-      ex1 := factorOutSum(k, ex)
+    factorOut(ks : List E, ex : E) : E ==
+      ex1 := factorOutSum(ks, ex)
       if ex1 case "failed" then
-        ex2 := factorOutProd(k, ex)
+        ex2 := factorOutProd(ks, ex)
         ex2 case "failed" => ex
-        ex2 :: Expression R
+        ex2 :: E
       else
-        ex1 :: Expression R
+        ex1 :: E
+
+    factorOut(k : E, ex : E) : E ==
+      p1 := isTimes k
+      p1 case "failed" => factorOut([k], ex)
+      ks := p1 :: List E
+      factorOut(ks, ex)
+
+    assume(ex, p) ==
+      if key?(ex, marks) then
+        insert!(p, marks(ex))
+      else
+        marks(ex) := set([p])
+      p
+
+    assumed?(ex, p) ==
+      if key?(ex, marks) then
+        member?(p, marks(ex))
+      else
+        false
+
+    positive?(ex) ==
+      assumed?(ex, 'positive) => true
+      iex := retractIfCan(ex) :: Union(Integer, "failed")
+      iex case Integer => iex > 0
+
+      s := isPlus ex
+      if s case "failed" then
+        s := isTimes ex
+        s case "failed" => false
+        mults := s :: List E
+        every?(positive?, mults)
+      else
+        summands := s :: List E
+        ok := every?(positive?, summands)
+        ok
+
+    known?(ex, p) ==
+      if p = 'positive then
+        positive?(ex)
+      else
+        false
+
+    facts(ex) ==
+      if key?(ex, marks) then
+        marks(ex)
+      else
+        set([])
+
+    if R has PatternMatchable R and R has ConvertibleTo Pattern R then
+      collapseSqrtSqr(ex) ==
+        x := new() $ Symbol
+        xe : E := coerce x
+        r := suchThat(rule(sqrt(xe^(2 :: E)), xe), [x], xs +-> positive?(xs.1)) :: RewriteRule(R, R, E)
+        applyRules([r], ex)$ApplyRules(R, R, E)
+
+    trig2tan(ex) ==
+      x : E := coerce new() $ Symbol
+      tan2 : E := tan(x/(2::E))
+      sinTan := rule(sin(x), (2*tan2/(tan2^2 + 1)) :: E) :: RewriteRule(R, R, E)
+      cosTan := rule(cos(x), (1-tan2^2)/(1+tan2^2)) :: RewriteRule(R, R, E)
+      applyRules([sinTan, cosTan], ex)$ApplyRules(R, R, E)
     
