@@ -5,6 +5,7 @@ ExpressionHelper(R) : Exports == Implementation where
 
   E ==> Expression R
   PowerRecord ==> Record(val : E, exponent : Integer) 
+  RR ==> RewriteRule(R, R, E)
   
   Exports == with
 
@@ -22,6 +23,10 @@ ExpressionHelper(R) : Exports == Implementation where
       collapseSqrtSqr : E -> E
 
     trig2tan : E -> E
+    trig2hyper : E -> E
+    trig2exp : E -> E
+
+    gammaCollapse : E -> E
 
   Implementation == add
 
@@ -135,13 +140,38 @@ ExpressionHelper(R) : Exports == Implementation where
       collapseSqrtSqr(ex) ==
         x := new() $ Symbol
         xe : E := coerce x
-        r := suchThat(rule(sqrt(xe^(2 :: E)), xe), [x], xs +-> positive?(xs.1)) :: RewriteRule(R, R, E)
+        r := suchThat(rule(sqrt(xe^(2 :: E)), xe), [x], xs +-> positive?(xs.1)) :: RR
         applyRules([r], ex)$ApplyRules(R, R, E)
 
     trig2tan(ex) ==
       x : E := coerce new() $ Symbol
       tan2 : E := tan(x/(2::E))
-      sinTan := rule(sin(x), (2*tan2/(tan2^2 + 1)) :: E) :: RewriteRule(R, R, E)
-      cosTan := rule(cos(x), (1-tan2^2)/(1+tan2^2)) :: RewriteRule(R, R, E)
+      sinTan := rule(sin(x), (2*tan2/(tan2^2 + 1)) :: E) :: RR
+      cosTan := rule(cos(x), (1-tan2^2)/(1+tan2^2)) :: RR
       applyRules([sinTan, cosTan], ex)$ApplyRules(R, R, E)
+
+    trig2hyper(ex) ==
+      i : E := sqrt(-1)
+      x : E := coerce new() $ Symbol
+      sinH := rule(sin(x), sinh(i*x)/i) :: RR
+      cosH := rule(cos(x), cosh(i*x)) :: RR
+      applyRules([sinH, cosH], ex) $ ApplyRules(R, R, E)
+
+    trig2exp(ex) ==
+      i : E := sqrt(-1)
+      x : E := coerce new() $ Symbol
+      two : E := 2 :: E
+      sinR := rule(sin(x), (exp(i*x) - exp(-i*x))/(two*i)) :: RR
+      cosR := rule(cos(x), (exp(i*x) + exp(-i*x))/two) :: RR
+      applyRules([sinR, cosR], ex) $ ApplyRules(R, R, E)
+
+    gammaCollapse(ex) ==
+      z : E := coerce new() $ Symbol
+      p : E := pi() :: E
+      r1 := rule(Gamma(z)*Gamma(-z), -p/(z*sin(p*z))) :: RR
+      r2 := rule(Gamma(z)*Gamma(1-z), p/sin(p*z)) :: RR
+      -- r3 := rule(Gamma(1/2 + z)*Gamma(1/2 - z), p/cos(p*z)) :: RR
+      r4 := rule(Gamma(1+z)*Gamma(1-z), (p*z)/sin(p*z)) :: RR
+      -- applyRules([r1, r2, r3, r4], ex) $ ApplyRules(R, R, E)
+      applyRules([r1,r2,r4], ex) $ ApplyRules(R, R, E)
     
