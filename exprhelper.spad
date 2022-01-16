@@ -1,7 +1,7 @@
 )abbrev package EXHELPER ExpressionHelper
 ExpressionHelper(R) : Exports == Implementation where
 
-  R : Join(Comparable, PolynomialFactorizationExplicit, RetractableTo Integer, LinearlyExplicitOver Integer, CharacteristicZero, CoercibleFrom Integer, Ring)
+  R : Join(Comparable, PolynomialFactorizationExplicit, RetractableTo Integer, LinearlyExplicitOver Integer, CharacteristicZero, CoercibleFrom Integer, CommutativeRing, GcdDomain, IntegralDomain)
 
   E ==> Expression R
   PowerRecord ==> Record(val : E, exponent : Integer) 
@@ -9,9 +9,9 @@ ExpressionHelper(R) : Exports == Implementation where
   
   Exports == with
 
-    dividePower : (E, E) -> Union(E, "failed")
     factorOut : (List E, E) -> E
     factorOut : (E, E) -> E
+    factorWhatPossible : E -> E
 
     assume_only : (E, Symbol) -> Symbol
     assume : (E, Symbol) -> Set Symbol
@@ -27,16 +27,21 @@ ExpressionHelper(R) : Exports == Implementation where
     if R has PatternMatchable R and R has ConvertibleTo Pattern R then
       collapseSqrtSqr : E -> E
 
+    expandTrigMultiples : E -> E
+
     trig2tan : E -> E
     trig2hyper : E -> E
     trig2exp : E -> E
 
     gammaCollapse : E -> E
+    dilogCollapse : E -> E
+    expandBinom : E -> E
 
   Implementation == add
 
     marks := empty() $ Table(E, Set Symbol)
 
+    dividePower : (E, E) -> Union(E, "failed")
     dividePower(ex1, ex2) ==
         r1 := isPower ex1
         r2 := isPower ex2
@@ -99,6 +104,40 @@ ExpressionHelper(R) : Exports == Implementation where
       p1 case "failed" => factorOut([k], ex)
       ks := p1 :: List E
       factorOut(ks, ex)
+
+    common_factors : E -> Table(E, Integer)
+    common_factors(ex) ==
+      s := isPlus ex
+      s case "failed" => empty()
+      summands := s :: List E
+      res := empty() $ Table(E, Integer)
+      for summand in summands repeat
+        p := isTimes summand
+        if not (p case "failed") then
+          factors := p :: List E
+          for f in factors repeat
+            res(f) := res(f, 0) + 1
+      res
+
+    FactorRecord ==> Record(key : E, entry : Integer)
+    
+    cmpFactorRecord : (FactorRecord, FactorRecord) -> Boolean
+    cmpFactorRecord(f1, f2) ==
+      f1.entry > f2.entry
+
+    mostUsedFactor : E -> Union(FactorRecord, "failed")
+    mostUsedFactor(ex) ==
+      factors := common_factors(ex)
+      empty? factors => "failed"
+      rec := max(cmpFactorRecord, factors)
+      rec
+
+    factorWhatPossible(ex) ==
+      m := mostUsedFactor ex
+      m case "failed" => ex
+      mostUsed := m :: FactorRecord
+      r := factorOut(mostUsed.key, ex)
+      r
 
     assume_only(ex, p) ==
       if key?(ex, marks) then
@@ -203,6 +242,26 @@ ExpressionHelper(R) : Exports == Implementation where
         r := suchThat(rule(sqrt(xe^(2 :: E)), xe), [x], xs +-> positive?(xs.1)) :: RR
         applyRules([r], ex)$ApplyRules(R, R, E)
 
+    sinSign : E -> E
+    sinSign(n) ==
+      two : E := 2 :: E
+      (-1)^((n-1) quo two)*(1 - (-1)^n)/two
+
+    cosSign : E -> E
+    cosSign(n) ==
+      two : E := 2 :: E
+      (-1)^(n quo two)*(1 + (-1)^n)/two
+
+    expandTrigMultiples(ex) ==
+      x : E := coerce new() $ Symbol
+      ns := new() $ Symbol
+      n : E := coerce ns
+      ms : Symbol := new() $ Symbol
+      m : E := coerce ms
+      cosR := suchThat(rule(cos(n*x), sum(binomial(n,m)*cosSign(m)*sin(x)^m*cos(x)^(n-m), equation(ms, 0..n)) $ FunctionSpaceSum(R,E)), [ns], xs +-> known_integer?(xs.1)) :: RR
+      sinR := suchThat(rule(sin(n*x), sum(binomial(n,m)*sinSign(m)*sin(x)^m*cos(x)^(n-m), equation(ms, 0..n)) $ FunctionSpaceSum(R,E)), [ns], xs +-> known_integer?(xs.1)) :: RR
+      applyRules([cosR, sinR], ex, 1) $ ApplyRules(R, R, E)
+
     trig2tan(ex) ==
       x : E := coerce new() $ Symbol
       tan2 : E := tan(x/(2::E))
@@ -234,4 +293,21 @@ ExpressionHelper(R) : Exports == Implementation where
       r4 := rule(Gamma(1+z)*Gamma(1-z), (p*z)/sin(p*z)) :: RR
       -- applyRules([r1, r2, r3, r4], ex) $ ApplyRules(R, R, E)
       applyRules([r1,r2,r4], ex) $ ApplyRules(R, R, E)
+
+    dilogCollapse(ex) ==
+      z : E := coerce new() $ Symbol
+      two : E := 2 :: E
+      r1 := rule(dilog(z)+dilog(-z), dilog(z^two)/two) :: RR
+      r2 := rule(dilog(1-z) + dilog(1 - 1/z), -log(z)^two/two) :: RR
+      applyRules([r1, r2], ex) $ ApplyRules(R, R, E)
+
+    expandBinom(ex) ==
+      a : E := coerce new() $ Symbol
+      b : E := coerce new() $ Symbol
+      n : E := coerce new() $ Symbol
+      ms : Symbol := new() $ Symbol
+      m : E := coerce ms
+      zero : E := 0 :: E
+      r1 := rule((a+b)^n, sum(binomial(n,m)*a^m*b^(n-m), equation(ms, zero..n)) $ FunctionSpaceSum(R, E)) :: RR
+      applyRules([r1], ex) $ ApplyRules(R, R, E)
     
