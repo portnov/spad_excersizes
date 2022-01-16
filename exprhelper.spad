@@ -239,7 +239,8 @@ ExpressionHelper(R) : Exports == Implementation where
       collapseSqrtSqr(ex) ==
         x := new() $ Symbol
         xe : E := coerce x
-        r := suchThat(rule(sqrt(xe^(2 :: E)), xe), [x], xs +-> positive?(xs.1)) :: RR
+        two : E := 2 :: E
+        r := suchThat(rule(sqrt(xe^two), xe), [x], xs +-> positive?(xs.1)) :: RR
         applyRules([r], ex)$ApplyRules(R, R, E)
 
     sinSign : E -> E
