@@ -21,6 +21,8 @@ ExpressionHelper(R) : Exports == Implementation where
     positive? : E -> Boolean
     nonzero? : E -> Boolean
     known_integer? : E -> Boolean
+    known_even? : E -> Boolean
+    known_odd? : E -> Boolean
     known_real? : E -> Boolean
     facts : E -> Set Symbol
 
@@ -149,6 +151,9 @@ ExpressionHelper(R) : Exports == Implementation where
     assume(ex : E, p : Symbol) : Set Symbol ==
       rs := set() :: Set Symbol
       insert!(assume_only(ex, p), rs)
+      if p = 'even then
+        insert!(assume_only(ex, 'integer), rs)
+        insert!(assume_only(ex, 'real), rs)
       if p = 'integer then
         insert!(assume_only(ex, 'real), rs)
       if p = 'positive then
@@ -207,6 +212,45 @@ ExpressionHelper(R) : Exports == Implementation where
         summands := s :: List E
         every?(known_integer?, summands)
 
+    known_even?(ex) ==
+      iex := retractIfCan(ex) :: Union(Integer, "failed")
+      iex case Integer => even?(iex :: Integer)
+      assumed?(ex, 'even) => true
+      assumed?(ex, 'odd) => false
+
+      s := isPlus ex
+      if s case "failed" then
+        s := isTimes ex
+        s case "failed" => false
+        mults := s :: List E
+        any?(known_even?, mults)
+      else
+        summands := s :: List E
+        every?(known_even?, summands) => true
+        even?(# summands) and every?(known_odd?, summands)
+
+    known_odd?(ex) ==
+      iex := retractIfCan(ex) :: Union(Integer, "failed")
+      iex case Integer => odd?(iex :: Integer)
+      assumed?(ex, 'odd) => true
+      assumed?(ex, 'even) => false
+
+      s := isPlus ex
+      if s case "failed" then
+        s := isTimes ex
+        s case "failed" => false
+        mults := s :: List E
+        not any?(known_even?, mults)
+      else
+        summands := s :: List E
+        odd?(# summands) and every?(known_odd?, summands) => true
+        odd_summands := select(known_odd?, summands)
+        even_summands := select(known_even?, summands)
+        if # odd_summands + # even_summands = # summands then
+          odd?(# odd_summands)
+        else
+          false
+
     known_real?(ex) ==
       iex := retractIfCan(ex) :: Union(Integer, "failed")
       iex case Integer => true
@@ -226,6 +270,8 @@ ExpressionHelper(R) : Exports == Implementation where
       p = 'positive => positive?(ex)
       p = 'nonzero => nonzero?(ex)
       p = 'integer => known_integer?(ex)
+      p = 'even => known_even?(ex)
+      p = 'odd => known_odd?(ex)
       p = 'real => known_real?(ex)
       false
 
