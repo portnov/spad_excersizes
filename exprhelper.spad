@@ -13,10 +13,15 @@ ExpressionHelper(R) : Exports == Implementation where
     factorOut : (List E, E) -> E
     factorOut : (E, E) -> E
 
-    assume : (E, Symbol) -> Symbol
+    assume_only : (E, Symbol) -> Symbol
+    assume : (E, Symbol) -> Set Symbol
+    assume : (E, List Symbol) -> Set Symbol
     assumed? : (E, Symbol) -> Boolean
     known? : (E, Symbol) -> Boolean
     positive? : E -> Boolean
+    nonzero? : E -> Boolean
+    known_integer? : E -> Boolean
+    known_real? : E -> Boolean
     facts : E -> Set Symbol
 
     if R has PatternMatchable R and R has ConvertibleTo Pattern R then
@@ -95,12 +100,27 @@ ExpressionHelper(R) : Exports == Implementation where
       ks := p1 :: List E
       factorOut(ks, ex)
 
-    assume(ex, p) ==
+    assume_only(ex, p) ==
       if key?(ex, marks) then
         insert!(p, marks(ex))
       else
         marks(ex) := set([p])
       p
+
+    assume(ex : E, p : Symbol) : Set Symbol ==
+      rs := set() :: Set Symbol
+      insert!(assume_only(ex, p), rs)
+      if p = 'integer then
+        insert!(assume_only(ex, 'real), rs)
+      if p = 'positive then
+        insert!(assume_only(ex, 'real), rs)
+      rs
+
+    assume(ex : E, ps : List Symbol) : Set Symbol ==
+      rs := set() :: Set Symbol
+      for p in ps repeat
+        rs := union(rs, assume(ex, p))
+      rs
 
     assumed?(ex, p) ==
       if key?(ex, marks) then
@@ -109,9 +129,9 @@ ExpressionHelper(R) : Exports == Implementation where
         false
 
     positive?(ex) ==
-      assumed?(ex, 'positive) => true
       iex := retractIfCan(ex) :: Union(Integer, "failed")
       iex case Integer => iex > 0
+      assumed?(ex, 'positive) => true
 
       s := isPlus ex
       if s case "failed" then
@@ -124,11 +144,51 @@ ExpressionHelper(R) : Exports == Implementation where
         ok := every?(positive?, summands)
         ok
 
-    known?(ex, p) ==
-      if p = 'positive then
-        positive?(ex)
+    nonzero?(ex) ==
+      iex := retractIfCan(ex) :: Union(Integer, "failed")
+      iex case Integer => iex ~= 0
+      assumed?(ex, 'nonzero) => true
+      s := isTimes ex
+      s case "failed" => false
+      mults := s :: List E
+      every?(nonzero?, mults)
+
+    known_integer?(ex) ==
+      iex := retractIfCan(ex) :: Union(Integer, "failed")
+      iex case Integer => true
+      assumed?(ex, 'integer) => true
+
+      s := isPlus ex
+      if s case "failed" then
+        s := isTimes ex
+        s case "failed" => false
+        mults := s :: List E
+        every?(known_integer?, mults)
       else
-        false
+        summands := s :: List E
+        every?(known_integer?, summands)
+
+    known_real?(ex) ==
+      iex := retractIfCan(ex) :: Union(Integer, "failed")
+      iex case Integer => true
+      assumed?(ex, 'real) => true
+
+      s := isPlus ex
+      if s case "failed" then
+        s := isTimes ex
+        s case "failed" => false
+        mults := s :: List E
+        every?(known_real?, mults)
+      else
+        summands := s :: List E
+        every?(known_real?, summands)
+
+    known?(ex, p) ==
+      p = 'positive => positive?(ex)
+      p = 'nonzero => nonzero?(ex)
+      p = 'integer => known_integer?(ex)
+      p = 'real => known_real?(ex)
+      false
 
     facts(ex) ==
       if key?(ex, marks) then
