@@ -240,7 +240,7 @@ ExpressionHelper(R) : Exports == Implementation where
         s := isTimes ex
         s case "failed" => false
         mults := s :: List E
-        not any?(known_even?, mults)
+        every?(known_odd?, mults)
       else
         summands := s :: List E
         odd?(# summands) and every?(known_odd?, summands) => true
