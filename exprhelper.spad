@@ -6,6 +6,8 @@ ExpressionHelper(R) : Exports == Implementation where
   E ==> Expression R
   PowerRecord ==> Record(val : E, exponent : Integer) 
   RR ==> RewriteRule(R, R, E)
+  ERule ==> (E -> E)
+  EMeasure ==> (E -> Integer)
   
   Exports == with
 
@@ -29,6 +31,8 @@ ExpressionHelper(R) : Exports == Implementation where
     if R has PatternMatchable R and R has ConvertibleTo Pattern R then
       collapseSqrtSqr : E -> E
 
+    isKernel : E -> Union(List E, "failed")
+
     expandTrigMultiples : E -> E
 
     trig2tan : E -> E
@@ -38,6 +42,13 @@ ExpressionHelper(R) : Exports == Implementation where
     gammaCollapse : E -> E
     dilogCollapse : E -> E
     expandBinom : E -> E
+
+    widthMeasure : E -> Integer
+    depthMeasure : E -> Integer
+    standardActions : () -> List ERule
+    greedySimplify : (E, List ERule, EMeasure, Integer) -> E
+    greedySimplifyDepth : E -> E
+    greedySimplifyWidth : E -> E
 
   Implementation == add
 
@@ -357,4 +368,107 @@ ExpressionHelper(R) : Exports == Implementation where
       zero : E := 0 :: E
       r1 := rule((a+b)^n, sum(binomial(n,m)*a^m*b^(n-m), equation(ms, zero..n)) $ FunctionSpaceSum(R, E)) :: RR
       applyRules([r1], ex) $ ApplyRules(R, R, E)
+
+    isKernel(ex) ==
+      k := retractIfCan(ex) :: Union(Kernel E, "failed")
+      k case "failed" => "failed"
+      ker := k :: Kernel E
+      argument ker
+
+    depthMeasure(ex) ==
+      # tower ex
+
+    widthMeasure(ex) ==
+      s := isPlus ex
+      if s case "failed" then
+        p := isTimes ex
+        if p case "failed" then
+          e := isPower ex
+          if e case "failed" then
+            k := isKernel ex
+            if k case "failed" then
+              return 1
+            else
+              args := k :: List E
+              return 1 + reduce(_+, [widthMeasure(a) for a in args], 0) $ List(Integer)
+          else
+            power := e :: Record(val : E, exponent : Integer)
+            if power.exponent ~= 1 then
+              return widthMeasure(power.val)
+            else
+              k := isKernel ex
+              if k case "failed" then
+                return 1
+              else
+                args := k :: List E
+                return 1 + reduce(_+, [widthMeasure(a) for a in args], 0) $ List(Integer)
+        else
+          factors := p :: List E
+          return reduce(_+, [widthMeasure(f) for f in factors], 0)
+      else
+        summands := s :: List E
+        return reduce(_+, [widthMeasure(s) for s in summands], 0)
+
+    greedySimplify(ex,  actions, measure, maxIterations) ==
+      maxIterations = 0 => ex
+      measureX := measure ex
+      results := [action(ex) for action in (actions :: List ERule)] :: List E
+      measures := [measure(r) for r in results]
+      bestIdx := max((i1, i2) +-> measures(i1) < measures(i2), indices measures)
+      bestMeasure := measures bestIdx
+      bestMeasure > measureX => ex
+      best := results(bestIdx)
+      greedySimplify(best, actions, measure, maxIterations-1)
+
+    standardActions () == 
+      rules := empty() $ List(ERule)
+
+      r : E -> E
+      r := e +-> (rootFactor(e) $ AlgebraicManipulations(R,E))
+      rules := concat(rules, r)
+
+      r := e +-> (ratDenom(e) $ AlgebraicManipulations(R,E))
+      rules := concat(rules, r)
+
+      r := e +-> (rootPower(e) $ AlgebraicManipulations(R,E))
+      rules := concat(rules, r)
+
+      r := e +-> (rootProduct(e) $ AlgebraicManipulations(R,E))
+      rules := concat(rules, r)
+
+      r := e +-> (rootSimp(e) $ AlgebraicManipulations(R,E))
+      rules := concat(rules, r)
+
+      r := e +-> (expand(e) $ TranscendentalManipulations(R,E))
+      rules := concat(rules, r)
+
+      r := e +-> (expandLog(e) $ TranscendentalManipulations(R,E))
+      rules := concat(rules, r)
+
+      r := e +-> (expandPower(e) $ TranscendentalManipulations(R,E))
+      rules := concat(rules, r)
+
+      -- r := e +-> (expandTrigProducts(e) $ TranscendentalManipulations(R,E))
+      -- concat!(rules, r)
+
+      r := e +-> (htrigs(e) $ TranscendentalManipulations(R,E))
+      rules := concat(rules, r)
+
+      r := e +-> (simplify(e) $ TranscendentalManipulations(R,E))
+      rules := concat(rules, r)
+
+      r := e +-> (simplifyExp(e) $ TranscendentalManipulations(R,E))
+      rules := concat(rules, r)
+
+      r := e +-> (simplifyLog(e) $ TranscendentalManipulations(R,E))
+      rules := concat(rules, r)
+
+      rules
+
+    greedySimplifyDepth(ex) ==
+      greedySimplify(ex, standardActions(), depthMeasure, 10)
+
+    greedySimplifyWidth(ex) ==
+      greedySimplify(ex, standardActions(), widthMeasure, 10)
+
     
