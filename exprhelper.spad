@@ -38,6 +38,9 @@ ExpressionHelper(R) : Exports == Implementation where
     trig2tan : E -> E
     trig2hyper : E -> E
     trig2exp : E -> E
+    cosSq2CosDoubled : E -> E
+    sinSq2SinDoubled : E -> E
+    trigPythagoreanCollapse : E -> E
 
     gammaCollapse : E -> E
     dilogCollapse : E -> E
@@ -47,6 +50,7 @@ ExpressionHelper(R) : Exports == Implementation where
     depthMeasure : E -> Integer
     standardActions : () -> List ERule
     greedySimplify : (E, List ERule, EMeasure, Integer) -> E
+    greedySimplifyStep : (E, List ERule, EMeasure, Integer) -> List E
     greedySimplifyDepth : E -> E
     greedySimplifyWidth : E -> E
 
@@ -320,6 +324,24 @@ ExpressionHelper(R) : Exports == Implementation where
       sinR := suchThat(rule(sin(n*x), sum(binomial(n,m)*sinSign(m)*sin(x)^m*cos(x)^(n-m), equation(ms, 0..n)) $ FunctionSpaceSum(R,E)), [ns], xs +-> known_integer?(xs.1)) :: RR
       applyRules([cosR, sinR], ex, 1) $ ApplyRules(R, R, E)
 
+    cosSq2CosDoubled(ex) == 
+      x : E := coerce new() $ Symbol
+      two : E := 2 :: E
+      r := rule(cos(x), (1 + cos(two*x))/two) :: RR
+      applyRules([r], ex, 1) $ ApplyRules(R, R, E)
+
+    sinSq2SinDoubled(ex) == 
+      x : E := coerce new() $ Symbol
+      two : E := 2 :: E
+      r := rule(sin(x), (1 - cos(two*x))/two) :: RR
+      applyRules([r], ex, 1) $ ApplyRules(R, R, E)
+
+    trigPythagoreanCollapse(ex) ==
+      x : E := coerce new() $ Symbol
+      two : E := 2 :: E
+      r := rule(sin(x)^two + cos(x)^two, 1 :: E) :: RR
+      applyRules([r], ex, 1) $ ApplyRules(R, R, E)
+
     trig2tan(ex) ==
       x : E := coerce new() $ Symbol
       tan2 : E := tan(x/(2::E))
@@ -375,8 +397,8 @@ ExpressionHelper(R) : Exports == Implementation where
       ker := k :: Kernel E
       argument ker
 
-    depthMeasure(ex) ==
-      # tower ex
+    -- depthMeasure(ex) ==
+    --   # tower ex
 
     widthMeasure(ex) ==
       s := isPlus ex
@@ -409,16 +431,62 @@ ExpressionHelper(R) : Exports == Implementation where
         summands := s :: List E
         return reduce(_+, [widthMeasure(s) for s in summands], 0)
 
-    greedySimplify(ex,  actions, measure, maxIterations) ==
-      maxIterations = 0 => ex
+    depthMeasure(ex) ==
+      s := isPlus ex
+      if s case "failed" then
+        p := isTimes ex
+        if p case "failed" then
+          e := isPower ex
+          if e case "failed" then
+            k := isKernel ex
+            if k case "failed" then
+              return 1
+            else
+              args := k :: List E
+              empty? args => 1
+              return 1 + max([depthMeasure(a) for a in args]) $ List(Integer)
+          else
+            power := e :: Record(val : E, exponent : Integer)
+            if power.exponent ~= 1 then
+              return depthMeasure(power.val)
+            else
+              k := isKernel ex
+              if k case "failed" then
+                return 1
+              else
+                args := k :: List E
+                empty? args => 1
+                return 1 + max([depthMeasure(a) for a in args]) $ List(Integer)
+        else
+          factors := p :: List E
+          empty? factors => 1
+          return 1 + max([depthMeasure(f) for f in factors])
+      else
+        summands := s :: List E
+        empty? summands => 1
+        return 1 + max([depthMeasure(s) for s in summands])
+
+    greedySimplifyStep(ex, actions, measure, maxIterations) ==
+      maxIterations = 0 => [ex] :: List E
       measureX := measure ex
       results := [action(ex) for action in (actions :: List ERule)] :: List E
-      measures := [measure(r) for r in results]
-      bestIdx := max((i1, i2) +-> measures(i1) < measures(i2), indices measures)
-      bestMeasure := measures bestIdx
-      bestMeasure > measureX => ex
-      best := results(bestIdx)
-      greedySimplify(best, actions, measure, maxIterations-1)
+      filteredResults := select(e +-> e ~= ex, results) :: List E
+      measures := [measure(r) for r in filteredResults]
+      bestValue := min(measures)
+      bestValue > measureX => [ex] :: List E
+
+      nextResults := empty() $ List(E)
+      for i in indices measures repeat
+        if measures(i) = bestValue then
+          res := greedySimplifyStep(filteredResults(i), actions, measure, maxIterations-1) :: List E
+          for e in res repeat
+            if not member?(e, nextResults) then
+              nextResults := cons(e, nextResults)
+
+      nextResults
+          
+    greedySimplify(ex,  actions, measure, maxIterations) ==
+      greedySimplifyStep(ex, actions, measure, maxIterations)(1)
 
     standardActions () == 
       rules := empty() $ List(ERule)
@@ -439,6 +507,15 @@ ExpressionHelper(R) : Exports == Implementation where
       r := e +-> (rootSimp(e) $ AlgebraicManipulations(R,E))
       rules := concat(rules, r)
 
+      r := e +-> trig2tan(e)
+      rules := concat(rules, r)
+
+      r := e +-> trig2hyper(e)
+      rules := concat(rules, r)
+
+      r := e +-> trig2exp(e)
+      rules := concat(rules, r)
+
       r := e +-> (expand(e) $ TranscendentalManipulations(R,E))
       rules := concat(rules, r)
 
@@ -448,8 +525,15 @@ ExpressionHelper(R) : Exports == Implementation where
       r := e +-> (expandPower(e) $ TranscendentalManipulations(R,E))
       rules := concat(rules, r)
 
-      -- r := e +-> (expandTrigProducts(e) $ TranscendentalManipulations(R,E))
-      -- concat!(rules, r)
+      if R has PatternMatchable R and R has ConvertibleTo Pattern R and (Expression R) has (ConvertibleTo Pattern R) and (Expression R) has (PatternMatchable R) then
+        r := e +-> (expandTrigProducts(e) $ TranscendentalManipulations(R,E))
+        concat!(rules, r)
+
+      r := e +-> cosSq2CosDoubled(e)
+      rules := concat(rules, r)
+
+      r := e +-> sinSq2SinDoubled(e)
+      rules := concat(rules, r)
 
       r := e +-> (htrigs(e) $ TranscendentalManipulations(R,E))
       rules := concat(rules, r)
