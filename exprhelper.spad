@@ -41,6 +41,8 @@ ExpressionHelper(R) : Exports == Implementation where
     cosSq2CosDoubled : E -> E
     sinSq2SinDoubled : E -> E
     trigPythagoreanCollapse : E -> E
+    moivre : E -> E
+    deMoivre : E -> E
 
     gammaCollapse : E -> E
     dilogCollapse : E -> E
@@ -50,7 +52,7 @@ ExpressionHelper(R) : Exports == Implementation where
     depthMeasure : E -> Integer
     standardActions : () -> List ERule
     greedySimplify : (E, List ERule, EMeasure, Integer) -> E
-    greedySimplifyStep : (E, List ERule, EMeasure, Integer) -> List E
+    greedySimplifyStep : (E, List ERule, EMeasure, Integer) -> Union(List E, "failed")
     greedySimplifyDepth : E -> E
     greedySimplifyWidth : E -> E
 
@@ -342,6 +344,18 @@ ExpressionHelper(R) : Exports == Implementation where
       r := rule(sin(x)^two + cos(x)^two, 1 :: E) :: RR
       applyRules([r], ex, 1) $ ApplyRules(R, R, E)
 
+    moivre(ex) ==
+      x : E := coerce new() $ Symbol
+      i := sqrt(-1) :: E
+      r := rule(exp(i*x), cos(x) + i*sin(x)) :: RR
+      applyRules([r], ex) $ ApplyRules(R, R, E)
+
+    deMoivre(ex) ==
+      x : E := coerce new() $ Symbol
+      i := sqrt(-1) :: E
+      r := rule(cos(x) + i*sin(x), exp(i*x)) :: RR
+      applyRules([r], ex) $ ApplyRules(R, R, E)
+
     trig2tan(ex) ==
       x : E := coerce new() $ Symbol
       tan2 : E := tan(x/(2::E))
@@ -467,26 +481,30 @@ ExpressionHelper(R) : Exports == Implementation where
         return 1 + max([depthMeasure(s) for s in summands])
 
     greedySimplifyStep(ex, actions, measure, maxIterations) ==
-      maxIterations = 0 => [ex] :: List E
+      maxIterations = 0 => "failed"
       measureX := measure ex
       results := [action(ex) for action in (actions :: List ERule)] :: List E
       filteredResults := select(e +-> e ~= ex, results) :: List E
       measures := [measure(r) for r in filteredResults]
       bestValue := min(measures)
-      bestValue > measureX => [ex] :: List E
+      bestValue > measureX => "failed"
 
       nextResults := empty() $ List(E)
       for i in indices measures repeat
         if measures(i) = bestValue then
-          res := greedySimplifyStep(filteredResults(i), actions, measure, maxIterations-1) :: List E
-          for e in res repeat
-            if not member?(e, nextResults) then
-              nextResults := cons(e, nextResults)
+          res := greedySimplifyStep(filteredResults(i), actions, measure, maxIterations-1)
+          if not (res case "failed") then
+            for e in (res :: List E) repeat
+              if not member?(e, nextResults) then
+                nextResults := cons(e, nextResults)
 
       nextResults
           
     greedySimplify(ex,  actions, measure, maxIterations) ==
-      greedySimplifyStep(ex, actions, measure, maxIterations)(1)
+      r := greedySimplifyStep(ex, actions, measure, maxIterations)
+      r case "failed" => ex
+      res := r :: List E
+      res(1)
 
     standardActions () == 
       rules := empty() $ List(ERule)
