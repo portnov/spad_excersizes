@@ -18,6 +18,7 @@ ExpressionHelper(R) : Exports == Implementation where
     assume_only : (E, Symbol) -> Symbol
     assume : (E, Symbol) -> Set Symbol
     assume : (E, List Symbol) -> Set Symbol
+    derive : Equation E -> Table(E, Set Symbol)
     assumed? : (E, Symbol) -> Boolean
     known? : (E, Symbol) -> Boolean
     positive? : E -> Boolean
@@ -34,6 +35,7 @@ ExpressionHelper(R) : Exports == Implementation where
     isKernel : E -> Union(List E, "failed")
 
     expandTrigMultiples : E -> E
+    expandTrigPowers : E -> E
 
     trig2tan : E -> E
     trig2hyper : E -> E
@@ -168,7 +170,7 @@ ExpressionHelper(R) : Exports == Implementation where
     assume(ex : E, p : Symbol) : Set Symbol ==
       rs := set() :: Set Symbol
       insert!(assume_only(ex, p), rs)
-      if p = 'even then
+      if (p = 'even) or (p = 'odd) then
         insert!(assume_only(ex, 'integer), rs)
         insert!(assume_only(ex, 'real), rs)
       if p = 'integer then
@@ -298,6 +300,26 @@ ExpressionHelper(R) : Exports == Implementation where
       else
         set([])
 
+    insert_facts! : (E, Set Symbol, Table(E, Set Symbol)) -> Void
+    insert_facts!(ex, ts, rs) ==
+      if key?(ex, rs) then
+        for t in members ts repeat
+          insert!(t, rs(ex))
+      else
+        rs(ex) := ts
+
+    derive(eq) ==
+      rs := empty() $ Table(E, Set Symbol)
+      predicates := ['real, 'integer, 'positive, 'nonzero, 'even, 'odd] :: List Symbol
+      for p in predicates repeat
+        if known?(lhs(eq), p) and not known?(rhs(eq), p) then
+          ex := rhs(eq)
+          insert_facts!(ex, assume(ex, p), rs)
+        else if not known?(lhs(eq), p) and known?(rhs(eq), p) then
+          ex := lhs(eq)
+          insert_facts!(ex, assume(ex, p), rs)
+      rs
+
     if R has PatternMatchable R and R has ConvertibleTo Pattern R then
       collapseSqrtSqr(ex) ==
         x := new() $ Symbol
@@ -325,6 +347,21 @@ ExpressionHelper(R) : Exports == Implementation where
       cosR := suchThat(rule(cos(n*x), sum(binomial(n,m)*cosSign(m)*sin(x)^m*cos(x)^(n-m), equation(ms, 0..n)) $ FunctionSpaceSum(R,E)), [ns], xs +-> known_integer?(xs.1)) :: RR
       sinR := suchThat(rule(sin(n*x), sum(binomial(n,m)*sinSign(m)*sin(x)^m*cos(x)^(n-m), equation(ms, 0..n)) $ FunctionSpaceSum(R,E)), [ns], xs +-> known_integer?(xs.1)) :: RR
       applyRules([cosR, sinR], ex, 1) $ ApplyRules(R, R, E)
+
+    expandTrigPowers(ex) ==
+      x : E := coerce new() $ Symbol
+      ns := new() $ Symbol
+      n : E := coerce ns
+      two : E := 2 :: E
+      n2 : E := n quo two
+      n12 : E := (n-1) quo two
+      ks : Symbol := new() $ Symbol
+      k : E := coerce ks
+      sinEven := suchThat(rule(sin(x)^n, binomial(n,n2)/(two^n) + (1/(two^(n-1)))*sum((-1)^(n2-k)*binomial(n,k)*sin((n-two*k)*x), equation(ks, 0..(n2-1))) $ FunctionSpaceSum(R,E)), [ns], xs +-> known_even?(xs.1)) :: RR
+      cosEven := suchThat(rule(cos(x)^n, binomial(n,n2)/(two^n) + (1/(two^(n-1)))*sum(binomial(n,k)*cos((n-two*k)*x), equation(ks, 0..(n2-1))) $ FunctionSpaceSum(R,E)), [ns], xs +-> known_even?(xs.1)) :: RR
+      sinOdd := suchThat(rule(sin(x)^n, (1/(two^(n-1)))*sum((-1)^(n12-k)*binomial(n,k)*sin((n-two*k)*x), equation(ks, 0..n12)) $ FunctionSpaceSum(R, E)), [ns], xs +-> known_odd?(xs.1)) :: RR
+      cosOdd := suchThat(rule(cos(x)^n, (1/(two^(n-1)))*sum(binomial(n,k)*cos((n-two*k)*x), equation(ks, 0..n12)) $ FunctionSpaceSum(R, E)), [ns], xs +-> known_odd?(xs.1)) :: RR
+      applyRules([sinEven, cosEven, sinOdd, cosOdd], ex, 1) $ ApplyRules(R, R, E)
 
     cosSq2CosDoubled(ex) == 
       x : E := coerce new() $ Symbol
