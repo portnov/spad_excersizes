@@ -6,7 +6,7 @@ IntegralHelper(R) : Exports == Implementation where
   E ==> Expression R
   IndefiniteIntegral ==> Record(expr : E, backwardSubstitution : Equation E)
   DefiniteIntegral ==> Record(expr : E, interval : SegmentBinding E, backwardSubstitution : Equation E)
-  ByPartsResult ==> Record(uv : E, integralVDu : E)
+  ByPartsResult ==> Record(uv : E, v : E, du : E, integralVDu : E)
 
   Exports == with
 
@@ -14,7 +14,9 @@ IntegralHelper(R) : Exports == Implementation where
     changeVar : (E, SegmentBinding E, Equation E, Symbol) -> DefiniteIntegral
     integrateByPartsParted : (E, E, Symbol) -> Union(ByPartsResult, "failed")
     integrateByParts : (E, E, Symbol) -> Union(E, "failed")
+    integrateByParts : (E, E, SegmentBinding OrderedCompletion E) -> Union(E, "failed")
     feynmanIntegrate : (E, SegmentBinding OrderedCompletion E, SegmentBinding E) -> Union(OrderedCompletion E, "failed", "potentialPole")
+    deltaOnSegment : (E, SegmentBinding OrderedCompletion E) -> Union(E, "failed")
 
   Implementation == add
 
@@ -46,7 +48,7 @@ IntegralHelper(R) : Exports == Implementation where
       vdur := integrate(v*du, x) $ FunctionSpaceIntegration(R, E)
       vdur case List E => "failed"
       vdu : E := vdur :: E
-      res : ByPartsResult := [u*v, vdu]
+      res : ByPartsResult := [u*v, v, du, vdu]
       res
 
     integrateByParts(u, dv, x) ==
@@ -54,6 +56,42 @@ IntegralHelper(R) : Exports == Implementation where
       r case "failed" => "failed"
       result := r :: ByPartsResult
       result.uv - result.integralVDu
+
+    integrateByParts(u : E, dv : E, bind: SegmentBinding OrderedCompletion E) ==
+      x :=  variable(bind) $ SegmentBinding(OrderedCompletion E)
+      p := integrateByPartsParted(u, dv, x)
+      p case "failed" => "failed"
+      parts := p :: ByPartsResult
+
+      uvr := deltaOnSegment(parts.uv, bind)
+      uvr case "failed" => "failed"
+      uv := uvr :: E
+      vdur := integrate(parts.v * parts.du, bind) $ ElementaryFunctionDefiniteIntegration(R, E)
+      vdur case fail => "failed"
+      vdur case pole => "failed"
+      vdui : OrderedCompletion E := vdur pretend OrderedCompletion E
+      vdu_ir := retractIfCan vdui :: Union(E, "failed")
+      vdu_ir case "failed" => "failed"
+      vdu := vdu_ir :: E
+
+      uv - vdu
+
+    limitOrValue : (E, Symbol, OrderedCompletion E) -> Union(E, "failed")
+    limitOrValue(ex, var, val) ==
+      lim := limit(ex, (var :: E :: OrderedCompletion E) = (val :: OrderedCompletion E)) $ PowerSeriesLimitPackage(R,E)
+      if lim case (OrderedCompletion E) then
+        retractIfCan(lim) :: Union(E, "failed")
+      else
+        "failed"
+
+    deltaOnSegment(ex, bind) ==
+      var := variable(bind) $ SegmentBinding(OrderedCompletion E)
+      sg := segment bind
+      v1 := limitOrValue(ex, var, low sg)
+      v1 case "failed" => "failed"
+      v2 := limitOrValue(ex, var, high sg)
+      v2 case "failed" => "failed"
+      (v2 @ E) - (v1 @ E)
 
     feynmanIntegrate(expr, bind, addbind) ==
       addvar := variable(addbind)$SegmentBinding(Expression(R))
